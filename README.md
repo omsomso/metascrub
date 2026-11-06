@@ -72,12 +72,21 @@ Requires macOS 26 (Liquid Glass) and Xcode 26 or newer; the script uses Xcode's 
 the app to /Applications to keep it. The icon is drawn by `icon/make_icon.swift`; run
 `icon/make-icns.sh` to rebuild `Resources/AppIcon.icns`.
 
+### With omso Builder
+
+The repository is registered in omso Builder and describes its build in `omso-build.json`:
+`build.sh`, the engine tests (`test.sh`), then `MetaScrub --self-test`, which makes a photo and a
+PDF with personal metadata in the run folder and checks that cleaning and editing work and leave
+the pixels and text alone. **Build & Install** then copies `MetaScrub.app` into
+`/Applications/omso` (the only app folder omso Builder installs to).
+
 Command line (same engine, no window):
 
 ```sh
 build/MetaScrub.app/Contents/MacOS/MetaScrub --inspect FILE…
 build/MetaScrub.app/Contents/MacOS/MetaScrub --clean FILE… --out FOLDER
 build/MetaScrub.app/Contents/MacOS/MetaScrub --clean FILE… --in-place
+build/MetaScrub.app/Contents/MacOS/MetaScrub --self-test FOLDER   # checks the build on generated files
 ```
 
 Clean options: `--keep-attributes`, `--drop-color-profile`, `--drop-orientation`, `--keep-dates`.
@@ -85,7 +94,7 @@ Clean options: `--keep-attributes`, `--drop-color-profile`, `--drop-orientation`
 ## Tests
 
 ```sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test
+./test.sh                        # xcrun swift test with Xcode's toolchain; extra arguments are passed on
 ```
 
 The tests build sample files for every format (with known metadata), then read, edit and clean
@@ -93,7 +102,7 @@ them and check the content survives. An opt-in smoke test runs the same edit-the
 copies of real files and checks pixels, decoded audio, video frames and PDF text are unchanged:
 
 ```sh
-METASCRUB_SAMPLES=/path/to/folder DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test --filter RealFileTests
+METASCRUB_SAMPLES=/path/to/folder ./test.sh --filter RealFileTests
 ```
 
 Screens can be captured without clicking: `METASCRUB_SNAPSHOT=/tmp/shots METASCRUB_FILES=a.jpg:b.pdf`

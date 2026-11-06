@@ -87,9 +87,11 @@ These rules apply when working in a Git repository, including non-software work.
 
 # MetaScrub
 
-- Build with `./build.sh`; run tests with
-  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swift test`. Both need Xcode's
-  toolchain (macOS 26 SDK); the Command Line Tools alone are not enough.
+- Build with `./build.sh` and test with `./test.sh`. Both need Xcode's toolchain (macOS 26 SDK);
+  the Command Line Tools alone are not enough.
+- omso Builder builds this repository from `omso-build.json` (build, tests, `--self-test`, copy
+  into `/Applications/omso`). Keep that file working when build or test commands change, and
+  check it with an omso Builder preview or a build that is not installed.
 - The repository is local only. Commit validated work locally; do not create a remote, push, or
   publish without the user asking.
 - Cleaning must not re-encode content silently. If a path has to re-compress or drop something

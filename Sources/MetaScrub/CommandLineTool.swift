@@ -8,6 +8,7 @@ enum CommandLineTool {
            MetaScrub --inspect FILE…                   print every metadata field
            MetaScrub --clean FILE… --out FOLDER        save cleaned copies into FOLDER
            MetaScrub --clean FILE… --in-place          replace the originals
+           MetaScrub --self-test FOLDER                check the build on generated files in FOLDER
     Clean options: --keep-attributes  --drop-color-profile  --drop-orientation  --keep-dates
     """
 
@@ -27,6 +28,10 @@ enum CommandLineTool {
         guard let command = arguments.first, command != "--help" else {
             print(usage)
             return 0
+        }
+        if command == "--self-test" {
+            guard arguments.count == 2 else { print(usage); return 64 }
+            return await SelfTest.run(in: URL(fileURLWithPath: arguments[1], isDirectory: true))
         }
         var files: [URL] = []
         var output: URL?

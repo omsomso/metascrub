@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "name": "MetaScrub",
+  "notes": [
+    "Release build of MetaScrub.app (ad-hoc signed), the engine tests, and a self-test that cleans and edits a generated photo and PDF; then copies MetaScrub.app into /Applications/omso.",
+    "Needs Xcode 26 or newer (macOS 26 SDK)."
+  ],
+  "products": [
+    {
+      "name": "MetaScrub",
+      "configuration": "Release",
+      "steps": [
+        {"name": "Build", "run": ["/bin/sh", "{source}/build.sh"]},
+        {"name": "Test", "run": ["/bin/sh", "{source}/test.sh"], "env": {"TMPDIR": "{tmp}"}},
+        {"name": "Self-test", "run": ["{source}/build/MetaScrub.app/Contents/MacOS/MetaScrub", "--self-test", "{run}/self-test"]}
+      ],
+      "install": [
+        {"copy": "build/MetaScrub.app", "to": "/Applications/omso"}
+      ]
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import SwiftUI
 enum Main {
     static func main() {
         let arguments = Array(CommandLine.arguments.dropFirst())
-        if arguments.first == "--inspect" || arguments.first == "--clean" || arguments.first == "--help" {
+        if ["--inspect", "--clean", "--self-test", "--help"].contains(arguments.first ?? "") {
             exit(CommandLineTool.run(arguments))
         }
         MetaScrubApp.main()
