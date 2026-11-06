@@ -92,8 +92,8 @@ These rules apply when working in a Git repository, including non-software work.
 - omso Builder builds this repository from `omso-build.json` (build, tests, `--self-test`, copy
   into `/Applications/omso`). Keep that file working when build or test commands change, and
   check it with an omso Builder preview or a build that is not installed.
-- The repository is local only. Commit validated work locally; do not create a remote, push, or
-  publish without the user asking.
+- The remote is the private GitHub repository `omsomso/metascrub`. Commit validated work
+  locally; push only when the user asks, and never publish releases without being asked.
 - Cleaning must not re-encode content silently. If a path has to re-compress or drop something
   beyond metadata, return a note so the app shows it, and document it in the README table.
 - Tests and experiments work on generated fixtures or copies in temporary folders. Never point
