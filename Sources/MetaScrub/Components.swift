@@ -178,13 +178,12 @@ struct DropZone: View {
     }
 }
 
-/// Card background used for content blocks in the viewer: a light tint and a full outline, so cards stand
-/// out from the window in dark mode too (a hairline alone only showed at the rounded corners).
+/// Card background used for content blocks in the viewer: a soft tint with no outline. (Outlines read as a
+/// hairline that thickened at the rounded corners.)
 struct CardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.13), lineWidth: 1))
+            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

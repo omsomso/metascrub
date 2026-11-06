@@ -15,25 +15,40 @@ enum GenerationInfo {
         keywordLabels[keyword.lowercased()]
     }
 
-    /// For text found in EXIF/XMP fields (JPEG and WebP generators write there): a label when it is generation data.
+    /// For text in other fields (EXIF/XMP, or PNG text under an ordinary name such as Description): a label
+    /// when it is generation data. Draw Things, for example, writes a parameters line into Description and
+    /// a JSON object into the EXIF user comment.
     static func label(forFieldText text: String) -> String? {
         if text.hasPrefix("workflow:") { return "ComfyUI workflow" }
         if text.hasPrefix("prompt:") { return "ComfyUI prompt (node graph)" }
         if text.hasPrefix("{"), text.contains("\"class_type\"") { return "ComfyUI prompt (node graph)" }
         if text.contains("Steps: "), text.contains("Sampler: ") || text.contains("Seed: ") { return "Generation parameters" }
+        if text.hasPrefix("{"), text.count < 1_000_000,
+           let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] {
+            let keys = Set((object.count == 1 ? (object.values.first as? [String: Any]) ?? object : object).keys.map { $0.lowercased() })
+            let markers: Set<String> = ["c", "prompt", "positive_prompt", "uc", "negative_prompt", "seed", "steps", "sampler",
+                                        "sampler_name", "cfg_scale", "scale", "guidance_scale", "model", "ckpt_name"]
+            if keys.intersection(markers).count >= 3 { return "Generation settings (JSON)" }
+        }
         return nil
     }
 
-    /// Readable fields from every source, the first value for each label winning.
-    static func summary(_ sources: [String]) -> [(String, String)] {
+    /// Readable fields from every source, the first value for each label winning. `software` (the PNG
+    /// Software text or XMP creator tool) names the generator when the data itself doesn't.
+    static func summary(_ sources: [String], software: String? = nil) -> [(String, String)] {
         var result: [(String, String)] = []
         for source in sources {
             for (label, value) in fields(source) where !value.isEmpty && !result.contains(where: { $0.0 == label }) {
                 result.append((label, value))
             }
         }
-        let order = ["Generator", "Model", "LoRA", "Positive prompt", "Negative prompt", "Prompt text", "Seed", "Steps", "CFG",
-                     "Sampler", "Scheduler", "Denoise", "Size", "Nodes"]
+        guard !result.isEmpty else { return [] }
+        if let software, !software.isEmpty, result.first(where: { $0.0 == "Generator" })?.1 != "ComfyUI" {
+            result.removeAll { $0.0 == "Generator" }
+            result.append(("Generator", software))
+        }
+        let order = ["Generator", "Model", "LoRA", "Positive prompt", "Negative prompt", "Prompt text", "Seed", "Seed mode", "Steps",
+                     "CFG", "Sampler", "Scheduler", "Shift", "CLIP skip", "Denoise", "Size", "Nodes"]
         return result.sorted { (order.firstIndex(of: $0.0) ?? order.count) < (order.firstIndex(of: $1.0) ?? order.count) }
     }
 
@@ -148,13 +163,16 @@ enum GenerationInfo {
         var fields: [(String, String)] = [("Generator", "Automatic1111-style")]
         fields.append(("Positive prompt", positive.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)))
         fields.append(("Negative prompt", negative.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)))
+        // Automatic1111/Forge names, plus the variants Draw Things writes.
         let names = ["Model": "Model", "Steps": "Steps", "Sampler": "Sampler", "Schedule type": "Scheduler", "CFG scale": "CFG",
-                     "Seed": "Seed", "Size": "Size", "Denoising strength": "Denoise", "Version": "Generator", "Lora hashes": "LoRA"]
+                     "Guidance Scale": "CFG", "Seed": "Seed", "Seed Mode": "Seed mode", "Size": "Size", "Denoising strength": "Denoise",
+                     "Strength": "Denoise", "Shift": "Shift", "CLIP Skip": "CLIP skip", "Clip skip": "CLIP skip", "Version": "Generator",
+                     "Lora hashes": "LoRA"]
         for part in splitSettings(lines[settingsIndex]) {
             let pieces = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
             guard pieces.count == 2 else { continue }
             let value = pieces[1].trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-            if let label = names[pieces[0]] {
+            if let label = names[pieces[0]], !(label == "Denoise" && Double(value) == 1) {
                 if label == "Generator" { fields[0] = ("Generator", value) } else { fields.append((label, value)) }
             }
         }
@@ -200,14 +218,22 @@ enum GenerationInfo {
         }
         var fields: [(String, String)] = []
         if let model = pick(["model", "model_name", "checkpoint", "ckpt_name", "base_model"]) { fields.append(("Model", model)) }
-        if let positive = pick(["positive_prompt", "prompt", "positive"]) { fields.append(("Positive prompt", positive)) }
+        if let positive = pick(["positive_prompt", "prompt", "positive", "c"]) { fields.append(("Positive prompt", positive)) }
         if let negative = pick(["negative_prompt", "negativeprompt", "uc", "negative"]) { fields.append(("Negative prompt", negative)) }
         if let seed = pick(["seed", "noise_seed"]) { fields.append(("Seed", seed)) }
         if let steps = pick(["steps"]) { fields.append(("Steps", steps)) }
         if let cfg = pick(["cfg_scale", "cfgscale", "cfg", "scale", "guidance_scale"]) { fields.append(("CFG", cfg)) }
         if let sampler = pick(["sampler", "sampler_name"]) { fields.append(("Sampler", sampler)) }
         if let scheduler = pick(["scheduler"]) { fields.append(("Scheduler", scheduler)) }
-        if let width = pick(["width"]), let height = pick(["height"]) { fields.append(("Size", "\(width) × \(height)")) }
+        if let mode = pick(["seed_mode"]) { fields.append(("Seed mode", mode)) }
+        if let shift = pick(["shift"]) { fields.append(("Shift", shift)) }
+        if let skip = pick(["clip_skip"]) { fields.append(("CLIP skip", skip)) }
+        if let strength = pick(["strength", "denoising_strength"]), Double(strength) != 1 { fields.append(("Denoise", strength)) }
+        if let width = pick(["width"]), let height = pick(["height"]) {
+            fields.append(("Size", "\(width) × \(height)"))
+        } else if let size = pick(["size"]) {
+            fields.append(("Size", size))
+        }
         return fields
     }
 

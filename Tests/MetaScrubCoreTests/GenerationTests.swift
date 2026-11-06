@@ -162,4 +162,50 @@ import UniformTypeIdentifiers
         #expect(fields["CFG"] == "3.5")
         #expect(fields["Size"] == "1024 × 1024")
     }
+
+    /// Draw Things writes a parameters line into the PNG Description and a JSON object into the EXIF user comment.
+    @Test func drawThingsParametersAndJSON() async throws {
+        let url = try Fixtures.folder().appendingPathComponent("0_a_bear_on_a_broomstick_555591929.png")
+        let parameters = "a beautiful forest sunset with a bear flying on a broomstick\nSteps: 16, Sampler: Euler A Trailing, Guidance Scale: 1.0, Seed: 555591929, Size: 1024x1024, Model: hidream_i1_fast_q8p.ckpt, Strength: 1.0, Seed Mode: Scale Alike, Shift: 3.0, CLIP Skip: 2"
+        let settings = Self.json(["c": "a beautiful forest sunset with a bear flying on a broomstick", "clip_skip": 2, "mask_blur": 2.5,
+                                  "model": "hidream_i1_fast_q8p.ckpt", "profile": ["duration": 107.6], "sampler": "Euler A Trailing",
+                                  "scale": 1, "seed": 555591929, "seed_mode": "Scale Alike", "shift": 3, "size": "1024x1024",
+                                  "steps": 16, "strength": 1, "uc": ""] as [String: Any])
+        let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, Fixtures.picture(), [kCGImagePropertyExifDictionary: [kCGImagePropertyExifUserComment: settings],
+                                                                     kCGImagePropertyTIFFDictionary: [kCGImagePropertyTIFFSoftware: "Draw Things"]] as CFDictionary)
+        #expect(CGImageDestinationFinalize(destination))
+        var data = try Data(contentsOf: url)
+        data.insert(contentsOf: PNGScrubber.chunk("tEXt", Data("Description\u{0}".utf8) + Data(parameters.utf8))
+                        + PNGScrubber.chunk("tEXt", Data("Software\u{0}Draw Things".utf8)), at: 8 + 25)
+        try data.write(to: url)
+
+        let report = await MetadataEngine.inspect(url)
+        let generation = try #require(report.section("img.generation"))
+        #expect(Set(generation.entries.map(\.key)) == ["png:Description", "exif:UserComment"])
+        #expect(report.entry("png:Description")?.label == "Generation parameters")
+        #expect(report.entry("png:Description")?.isEditable == true)
+        #expect(report.entry("exif:UserComment")?.label == "Generation settings (JSON)")
+        #expect(report.entry("exif:UserComment")?.isEditable == false)
+        #expect(report.highlights.contains(.generation))
+        #expect(report.entry("tiff:Software") == nil)  // shown once, as the PNG Software text
+        let fields = Dictionary((report.section("img.generation.summary")?.entries ?? []).map { ($0.label, $0.value) },
+                                uniquingKeysWith: { first, _ in first })
+        #expect(fields["Generator"] == "Draw Things")
+        #expect(fields["Positive prompt"] == "a beautiful forest sunset with a bear flying on a broomstick")
+        #expect(fields["Model"] == "hidream_i1_fast_q8p.ckpt")
+        #expect(fields["Seed"] == "555591929")
+        #expect(fields["Steps"] == "16")
+        #expect(fields["CFG"] == "1.0")
+        #expect(fields["Sampler"] == "Euler A Trailing")
+        #expect(fields["Size"] == "1024x1024")
+        #expect(fields["Shift"] == "3.0")
+        #expect(fields["CLIP skip"] == "2")
+        #expect(fields["Seed mode"] == "Scale Alike")
+        #expect(fields["Denoise"] == nil)  // full strength isn't worth a line
+
+        let result = try await MetadataEngine.clean(url, options: CleanOptions(), destination: .overwrite)
+        #expect(result.remaining.isEmpty, "\(result.remaining.map(\.key))")
+        #expect(try Data(contentsOf: url).range(of: Data("broomstick".utf8)) == nil)
+    }
 }

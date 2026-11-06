@@ -22,10 +22,11 @@ It has two parts, picked in the sidebar:
 
 ### AI image generators
 
-Images from ComfyUI, Automatic1111/Forge, InvokeAI, SwarmUI, NovelAI and Fooocus carry the
-generator's data: ComfyUI saves its node graph (`prompt`) and canvas (`workflow`) as PNG text,
-Automatic1111-style tools a `parameters` text (in PNG text, or the EXIF user comment in JPEG and
-WebP). The viewer shows it under **AI Generation Data** and tags the file "AI Workflow"; a
+Images from ComfyUI, Automatic1111/Forge, Draw Things, InvokeAI, SwarmUI, NovelAI and Fooocus
+carry the generator's data: ComfyUI saves its node graph (`prompt`) and canvas (`workflow`) as PNG
+text, Automatic1111-style tools a `parameters` text (in PNG text, or the EXIF user comment in JPEG
+and WebP), and Draw Things a parameters line in the PNG Description plus a JSON object in the EXIF
+user comment. Generator data is recognised by name and by content, wherever it is stored. The viewer shows it under **AI Generation Data** and tags the file "AI Workflow"; a
 **Generation Details** summary lists the model, LoRAs, prompts, seed, steps, CFG, sampler,
 scheduler and size. JSON (node graphs, workflows) and fields over 4,000 characters are read-only
 (Copy takes them); plain parameter text can be edited, and any of them removed. Saving other edits

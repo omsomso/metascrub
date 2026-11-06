@@ -501,12 +501,12 @@ struct EntryRow: View {
                     .padding(.vertical, 3)
                     .background {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(focused ? Color(nsColor: .textBackgroundColor) : Color.primary.opacity(hovering ? 0.07 : 0.04))
+                            .fill(focused ? Color(nsColor: .textBackgroundColor) : Color.primary.opacity(hovering ? 0.10 : 0.06))
                     }
                     .overlay {
+                        // Outline only while typing; at rest the tint alone marks the field.
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(focused ? Color.accentColor.opacity(0.8) : Color.primary.opacity(hovering ? 0.22 : 0.12),
-                                          lineWidth: focused ? 1.5 : 1)
+                            .strokeBorder(focused ? Color.accentColor.opacity(0.8) : .clear, lineWidth: 1.5)
                     }
                     .padding(.horizontal, -6)
                     .help("Click to edit")

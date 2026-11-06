@@ -32,8 +32,9 @@ struct ImageHandler: FormatHandler {
         let tags = Self.tagSections(source, editable: editable, hiding: Set(chunks.map(\.text)))
         let (generationChunks, otherChunks) = Self.pngTextEntries(chunks, editable: editable)
         let generation = generationChunks + tags.generation
-        let sources = chunks.filter { GenerationInfo.label(forKeyword: $0.keyword) != nil }.map(\.text) + tags.generationTexts
-        let summary = GenerationInfo.summary(sources).map { label, value in
+        let sources = chunks.filter { Self.generationLabel(for: $0) != nil }.map(\.text) + tags.generationTexts
+        let software = chunks.first { $0.keyword == "Software" }?.text ?? tags.software
+        let summary = GenerationInfo.summary(sources, software: software).map { label, value in
             MetadataEntry(key: "gen:\(label)", label: label, value: value, multiline: value.count > 80 || label.hasSuffix("prompt"),
                           classify: false)
         }
@@ -195,15 +196,18 @@ struct ImageHandler: FormatHandler {
 
     struct TagSections {
         var sections: [MetadataSection]
-        /// Generator data some tools keep in EXIF fields (ComfyUI WebP, Automatic1111 JPEG).
+        /// Generator data some tools keep in EXIF fields (ComfyUI WebP, Automatic1111 JPEG, Draw Things).
         var generation: [MetadataEntry]
         var generationTexts: [String]
+        /// The creator tool, which names the generator in the summary.
+        var software: String?
     }
 
     static func tagSections(_ source: CGImageSource, editable: Bool, hiding hidden: Set<String> = []) -> TagSections {
         var entriesByGroup: [String: [MetadataEntry]] = [:]
         var generation: [MetadataEntry] = []
         var generationTexts: [String] = []
+        var software: String?
         if let tree = CGImageSourceCopyMetadataAtIndex(source, 0, nil) {
             CGImageMetadataEnumerateTagsUsingBlock(tree, nil, nil) { path, tag in
                 let key = path as String
@@ -211,6 +215,7 @@ struct ImageHandler: FormatHandler {
                 let name = (CGImageMetadataTagCopyName(tag) as String?) ?? key
                 guard prefix != "iio" else { return true }  // ImageIO bookkeeping, not stored in the file
                 let (value, simple) = render(tag)
+                if key == "xmp:CreatorTool" || (key == "tiff:Software" && software == nil) { software = value }
                 if pngMirrors.contains(key) && hidden.contains(value) { return true }
                 if let generationLabel = GenerationInfo.label(forFieldText: value) {
                     generation.append(MetadataEntry(key: key, label: generationLabel, value: displayText(value), detail: key,
@@ -234,7 +239,7 @@ struct ImageHandler: FormatHandler {
                                    templates: editable ? (templates[group.id] ?? []) : [],
                                    customFieldHint: editable && group.id == "img.xmp" ? "prefix:Name, e.g. xmp:Label" : nil)
         }
-        return TagSections(sections: sections, generation: generation, generationTexts: generationTexts)
+        return TagSections(sections: sections, generation: generation, generationTexts: generationTexts, software: software)
     }
 
     /// Longer values (whole workflows) are shown, copied and removed, but not edited in place.
@@ -259,13 +264,19 @@ struct ImageHandler: FormatHandler {
         return String(prefix) + String(decoding: pretty, as: UTF8.self)
     }
 
+    /// Generator data is recognised by its keyword (ComfyUI's `prompt`) or by its content (parameters
+    /// written into an ordinary field such as `Description`).
+    static func generationLabel(for chunk: PNGText.Chunk) -> String? {
+        GenerationInfo.label(forKeyword: chunk.keyword) ?? GenerationInfo.label(forFieldText: chunk.text)
+    }
+
     /// PNG text chunks as entries, split into generator data and ordinary text.
     static func pngTextEntries(_ chunks: [PNGText.Chunk], editable: Bool) -> ([MetadataEntry], [MetadataEntry]) {
         var generation: [MetadataEntry] = []
         var other: [MetadataEntry] = []
         for (chunk, key) in zip(chunks, PNGText.keys(chunks)) {
             let size = chunk.text.utf8.count
-            let generationLabel = GenerationInfo.label(forKeyword: chunk.keyword)
+            let generationLabel = Self.generationLabel(for: chunk)
             let detail = "\(chunk.keyword) · \(chunk.type)" + (size > 1024 ? " · \(Format.bytes(size))" : "")
             let entry = MetadataEntry(key: key, label: generationLabel ?? chunk.keyword, value: displayText(chunk.text), detail: detail,
                                       editable: editable && isEditableText(chunk.text), removable: editable,
