@@ -64,13 +64,13 @@ struct FileDetailView: View {
                     let sections = visibleSections(report)
                     let empty = sections.filter { isEmptyAddable($0) }
                     let filled = sections.filter { !isEmptyAddable($0) }
-                    ForEach(filled.filter { $0.kind == .embedded }) { section in
+                    ForEach(filled.filter { $0.kind == .embedded || $0.kind == .derived }) { section in
                         SectionCard(fileID: fileID, section: section, filter: search, editable: report.canEdit)
                     }
                     if !empty.isEmpty && report.canEdit {
                         AddMetadataCard(fileID: fileID, sections: empty)
                     }
-                    ForEach(filled.filter { $0.kind != .embedded }) { section in
+                    ForEach(filled.filter { $0.kind != .embedded && $0.kind != .derived }) { section in
                         SectionCard(fileID: fileID, section: section, filter: search, editable: report.canEdit || isFileLevel(section))
                     }
                     if visibleSections(report).isEmpty && !search.isEmpty {
@@ -294,6 +294,8 @@ struct SectionCard: View {
             if section.kind == .technical {
                 Text(section.entries.contains(where: \.isEditable) && editable ? "Technical" : "Read-only")
                     .font(.caption).foregroundStyle(.tertiary)
+            } else if section.kind == .derived {
+                Text("Summary").font(.caption).foregroundStyle(.tertiary)
             }
             Spacer()
             if editable && section.canAddFields && !collapsed { AddFieldMenu(fileID: fileID, section: section) }
@@ -321,7 +323,8 @@ struct SectionCard: View {
 
     private var tint: Color {
         switch section.kind {
-        case .embedded: return .accentColor
+        case .embedded: return section.entries.first?.highlight == .generation ? .pink : .accentColor
+        case .derived: return .pink
         case .technical: return .gray
         case .file: return .teal
         case .attributes: return .indigo
@@ -466,6 +469,17 @@ struct EntryRow: View {
         .background(rowTint(change: change, removed: removed))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+        .contextMenu {
+            Button("Copy Value") { Clipboard.copy(model.displayedValue(fileID, sectionID, entry)) }
+            Button("Copy Name") { Clipboard.copy(entry.detail ?? entry.label) }
+        }
+    }
+
+    /// Whole workflows run to hundreds of kilobytes; the row shows the start and Copy takes all of it.
+    private var isLong: Bool { entry.value.count > 600 }
+
+    private var shownValue: String {
+        entry.value.count > 3000 ? String(entry.value.prefix(3000)) + "\n…" : entry.value
     }
 
     @ViewBuilder private func value(removed: Bool) -> some View {
@@ -487,20 +501,30 @@ struct EntryRow: View {
                     .padding(.vertical, 3)
                     .background {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(focused ? Color(nsColor: .textBackgroundColor) : (hovering ? Color.primary.opacity(0.05) : .clear))
+                            .fill(focused ? Color(nsColor: .textBackgroundColor) : Color.primary.opacity(hovering ? 0.07 : 0.04))
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(focused ? Color.accentColor.opacity(0.7) : .clear, lineWidth: 1.5)
+                            .strokeBorder(focused ? Color.accentColor.opacity(0.8) : Color.primary.opacity(hovering ? 0.22 : 0.12),
+                                          lineWidth: focused ? 1.5 : 1)
                     }
                     .padding(.horizontal, -6)
+                    .help("Click to edit")
             } else {
-                Text(entry.value.isEmpty ? "—" : entry.value)
+                Text(entry.value.isEmpty ? "—" : shownValue)
+                    .font(isLong ? .callout.monospaced() : .body)
                     .foregroundStyle(entry.value.isEmpty ? .tertiary : .primary)
                     .strikethrough(removed)
                     .opacity(removed ? 0.45 : 1)
                     .textSelection(.enabled)
                     .lineLimit(entry.isMultiline ? 12 : 3)
+                if isLong {
+                    Button { Clipboard.copy(entry.value) } label: {
+                        Label("Copy \(entry.value.count > 1500 ? "all \(Format.characters(entry.value.count))" : "value")", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                }
             }
         }
     }

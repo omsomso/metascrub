@@ -31,6 +31,7 @@ extension Highlight {
     var color: Color {
         switch self {
         case .location: return .red
+        case .generation: return .pink
         case .device: return .orange
         case .people: return .purple
         case .history: return .blue
@@ -57,6 +58,7 @@ struct HighlightChip: View {
     private var help: String {
         switch highlight {
         case .location: return "Contains where the file was made (GPS coordinates or place names)."
+        case .generation: return "Contains an AI image generator's prompt, settings or workflow."
         case .device: return "Names the camera, phone or software that made the file."
         case .people: return "Contains names of authors, artists or owners."
         case .history: return "Records where the file came from or how it was edited."
@@ -176,18 +178,31 @@ struct DropZone: View {
     }
 }
 
-/// Card background used for content blocks in the viewer.
+/// Card background used for content blocks in the viewer: a light tint and a full outline, so cards stand
+/// out from the window in dark mode too (a hairline alone only showed at the rounded corners).
 struct CardBackground: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
-            .shadow(color: .black.opacity(0.04), radius: 6, y: 2)
+            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.primary.opacity(0.13), lineWidth: 1))
     }
 }
 
 extension View {
     func card() -> some View { modifier(CardBackground()) }
+}
+
+enum Format {
+    static func characters(_ count: Int) -> String {
+        count >= 1000 ? String(format: "%.0fK characters", Double(count) / 1000) : "\(count) characters"
+    }
+}
+
+enum Clipboard {
+    static func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
 }
 
 extension URL {

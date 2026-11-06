@@ -81,6 +81,9 @@ public enum SectionKind: String, Sendable {
     case embedded
     /// Read-only facts about the encoded content (stream format, page size). Not personal metadata.
     case technical
+    /// Read-only summary pulled out of embedded fields (e.g. the prompt inside an AI workflow).
+    /// Shown with the embedded sections; not counted, since it goes away with its source.
+    case derived
     /// Name, size, dates and permissions kept by the file system.
     case file
     /// Extended attributes macOS attaches to files (download source, quarantine, tags).
@@ -159,6 +162,7 @@ public struct MetadataEntry: Sendable, Identifiable, Hashable {
 /// Kinds of personal data worth pointing out before sharing a file.
 public enum Highlight: String, CaseIterable, Sendable, Hashable {
     case location
+    case generation
     case device
     case people
     case history
@@ -166,6 +170,7 @@ public enum Highlight: String, CaseIterable, Sendable, Hashable {
     public var title: String {
         switch self {
         case .location: return "Location"
+        case .generation: return "AI Workflow"
         case .device: return "Device"
         case .people: return "People"
         case .history: return "History"
@@ -175,6 +180,7 @@ public enum Highlight: String, CaseIterable, Sendable, Hashable {
     public var symbol: String {
         switch self {
         case .location: return "location.fill"
+        case .generation: return "sparkles"
         case .device: return "camera.fill"
         case .people: return "person.fill"
         case .history: return "clock.arrow.circlepath"

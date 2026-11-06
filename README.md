@@ -2,7 +2,8 @@
 
 A macOS app (SwiftUI, Liquid Glass) for seeing, editing and removing the metadata inside files:
 GPS positions in photos, camera and phone models, authors and companies in documents, edit
-history, encoder tags, and the "downloaded from" records macOS attaches to files.
+history, encoder tags, the prompts and workflows AI image generators save, and the "downloaded
+from" records macOS attaches to files.
 
 It has two parts, picked in the sidebar:
 
@@ -16,6 +17,19 @@ It has two parts, picked in the sidebar:
   As…** writes a copy and leaves the original alone, **Revert** drops the edits. Photos and
   videos with a position get a location card; the map only loads when you press **Show Map**
   (it fetches tiles from Apple Maps). **Send to Cleaner** moves a file to the Cleaner.
+  Right-click a row for **Copy Value**; long values (such as a whole workflow) also have a Copy
+  button.
+
+### AI image generators
+
+Images from ComfyUI, Automatic1111/Forge, InvokeAI, SwarmUI, NovelAI and Fooocus carry the
+generator's data: ComfyUI saves its node graph (`prompt`) and canvas (`workflow`) as PNG text,
+Automatic1111-style tools a `parameters` text (in PNG text, or the EXIF user comment in JPEG and
+WebP). The viewer shows it under **AI Generation Data** and tags the file "AI Workflow"; a
+**Generation Details** summary lists the model, LoRAs, prompts, seed, steps, CFG, sampler,
+scheduler and size. JSON (node graphs, workflows) and fields over 4,000 characters are read-only
+(Copy takes them); plain parameter text can be edited, and any of them removed. Saving other edits
+keeps them. Clean removes all of it.
 
 Cleaning options (Cleaner → Options): remove extended attributes (on), keep the colour profile
 (on), keep the orientation (on), keep the original file dates (off; otherwise the cleaned file is
@@ -25,8 +39,8 @@ dated now).
 
 | Format | Read | Edit | Clean | How cleaning works |
 | --- | --- | --- | --- | --- |
-| JPEG | EXIF, GPS, IPTC, XMP, maker notes | yes | yes | Drops EXIF/XMP/IPTC/comment/preview segments and anything after the image; keeps the compressed picture byte for byte, JFIF density, Adobe colour info, ICC profile (option) and a minimal orientation tag (option) |
-| PNG | text chunks, EXIF, XMP | yes (lossless rewrite) | yes | Keeps only image, transparency, colour, animation (APNG) and density chunks |
+| JPEG | EXIF, GPS, IPTC, XMP, maker notes, AI parameters in EXIF | yes | yes | Drops EXIF/XMP/IPTC/comment/preview segments and anything after the image; keeps the compressed picture byte for byte, JFIF density, Adobe colour info, ICC profile (option) and a minimal orientation tag (option) |
+| PNG | text chunks (incl. AI workflows), EXIF, XMP | yes: text chunks directly, other fields by a lossless rewrite that keeps every text chunk | yes | Keeps only image, transparency, colour, animation (APNG) and density chunks |
 | HEIC / HEIF / AVIF | EXIF, GPS, XMP | yes (lossless copy; re-compresses only if macOS refuses a change, and says so) | yes | Blanks the EXIF and XMP items in place; the picture, depth and HDR data, orientation and colour are untouched |
 | GIF | comments, XMP | read-only | yes | Keeps frames, timing and looping; drops comments and other application blocks |
 | WebP | EXIF, XMP | read-only (macOS can't write WebP) | yes | Drops the EXIF and XMP chunks and their header flags |

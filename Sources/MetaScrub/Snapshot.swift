@@ -30,6 +30,15 @@ enum Snapshot {
                 try? await Task.sleep(for: .milliseconds(900))
                 capture(folder.appendingPathComponent("4-viewer-\(index + 1).png"))
             }
+            if let file = model.viewerFiles.first, let report = file.report, report.sections.contains(where: { $0.kind == .derived }) {
+                // Collapse summaries to show the sections under them.
+                let summaries = report.sections.filter { $0.kind == .derived }.map(\.id)
+                model.selection = .file(file.id)
+                model.collapsedSections.formUnion(summaries)
+                try? await Task.sleep(for: .milliseconds(800))
+                capture(folder.appendingPathComponent("4b-viewer-1-below-summary.png"))
+                model.collapsedSections.subtract(summaries)
+            }
             if let file = model.viewerFiles.first, let report = file.report,
                let section = report.sections.first(where: { $0.kind == .embedded && $0.entries.contains(where: \.isEditable) }),
                let entry = section.entries.first(where: \.isEditable) {

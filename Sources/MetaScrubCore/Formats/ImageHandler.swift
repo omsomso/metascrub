@@ -26,7 +26,30 @@ struct ImageHandler: FormatHandler {
         report.location = Self.location(properties)
 
         let editable = frames == 1 && (copiesLosslessly || reencodesLosslessly)
-        report.sections = Self.tagSections(source, editable: editable)
+        // PNG text chunks are read directly: ImageIO hides custom keywords such as AI workflows.
+        var chunks: [PNGText.Chunk] = []
+        if format == .png { chunks = PNGText.read(try mappedData(url)).filter { !$0.isXMP } }
+        let tags = Self.tagSections(source, editable: editable, hiding: Set(chunks.map(\.text)))
+        let (generationChunks, otherChunks) = Self.pngTextEntries(chunks, editable: editable)
+        let generation = generationChunks + tags.generation
+        let sources = chunks.filter { GenerationInfo.label(forKeyword: $0.keyword) != nil }.map(\.text) + tags.generationTexts
+        let summary = GenerationInfo.summary(sources).map { label, value in
+            MetadataEntry(key: "gen:\(label)", label: label, value: value, multiline: value.count > 80 || label.hasSuffix("prompt"),
+                          classify: false)
+        }
+        report.sections = [
+            MetadataSection(id: "img.generation.summary", title: "Generation Details", symbol: "sparkles", kind: .derived, entries: summary,
+                            note: "Read from the AI generator's data in this file. Clean removes it together with that data."),
+            MetadataSection(id: "img.generation", title: "AI Generation Data", symbol: "sparkles.rectangle.stack", entries: generation,
+                            note: generation.isEmpty ? nil : "Saved by the image generator: the prompt, settings and node graph. Large fields are read-only; use Copy Value to take the JSON."),
+        ]
+        if format == .png {
+            report.sections.append(MetadataSection(
+                id: "img.pngtext", title: "PNG Text", symbol: "text.alignleft", entries: otherChunks,
+                templates: editable ? ["Title", "Author", "Description", "Copyright", "Comment", "Software", "Source"].map { FieldTemplate("png:\($0)", $0) } : [],
+                customFieldHint: editable ? "Text name, e.g. Comment" : nil))
+        }
+        report.sections += tags.sections
         report.sections += Self.extraSections(properties)
         report.canEdit = editable
         report.canClean = [.jpeg, .png, .gif, .webp, .heif, .tiff].contains(format)
@@ -161,8 +184,26 @@ struct ImageHandler: FormatHandler {
         ],
     ]
 
-    static func tagSections(_ source: CGImageSource, editable: Bool) -> [MetadataSection] {
+    /// Tags ImageIO fills in from standard PNG text chunks, with the chunk keyword. The tag is hidden when the
+    /// chunk is shown, and editing the tag edits the chunk too (ImageIO prefers the chunk when reading).
+    static let pngMirrorKeywords: [String: String] = [
+        "dc:title": "Title", "dc:description": "Description", "tiff:ImageDescription": "Description", "dc:creator": "Author",
+        "tiff:Artist": "Author", "dc:rights": "Copyright", "tiff:Copyright": "Copyright", "exif:UserComment": "Comment",
+        "tiff:Software": "Software", "xmp:CreatorTool": "Software",
+    ]
+    static var pngMirrors: Set<String> { Set(pngMirrorKeywords.keys) }
+
+    struct TagSections {
+        var sections: [MetadataSection]
+        /// Generator data some tools keep in EXIF fields (ComfyUI WebP, Automatic1111 JPEG).
+        var generation: [MetadataEntry]
+        var generationTexts: [String]
+    }
+
+    static func tagSections(_ source: CGImageSource, editable: Bool, hiding hidden: Set<String> = []) -> TagSections {
         var entriesByGroup: [String: [MetadataEntry]] = [:]
+        var generation: [MetadataEntry] = []
+        var generationTexts: [String] = []
         if let tree = CGImageSourceCopyMetadataAtIndex(source, 0, nil) {
             CGImageMetadataEnumerateTagsUsingBlock(tree, nil, nil) { path, tag in
                 let key = path as String
@@ -170,6 +211,14 @@ struct ImageHandler: FormatHandler {
                 let name = (CGImageMetadataTagCopyName(tag) as String?) ?? key
                 guard prefix != "iio" else { return true }  // ImageIO bookkeeping, not stored in the file
                 let (value, simple) = render(tag)
+                if pngMirrors.contains(key) && hidden.contains(value) { return true }
+                if let generationLabel = GenerationInfo.label(forFieldText: value) {
+                    generation.append(MetadataEntry(key: key, label: generationLabel, value: displayText(value), detail: key,
+                                                    editable: editable && simple && isEditableText(value), removable: editable,
+                                                    multiline: true, highlight: .generation))
+                    generationTexts.append(value)
+                    return true
+                }
                 let group = groupID(prefix: prefix, name: name)
                 let label = labels[key] ?? Format.words(name)
                 let entry = MetadataEntry(key: key, label: label, value: value, detail: key, editable: editable && simple,
@@ -178,13 +227,52 @@ struct ImageHandler: FormatHandler {
                 return true
             }
         }
-        return groups.map { group in
+        let sections = groups.map { group in
             let entries = (entriesByGroup[group.id] ?? []).sorted { $0.label.localizedStandardCompare($1.label) == .orderedAscending }
             return MetadataSection(id: group.id, title: group.title, symbol: group.symbol,
                                    kind: group.id == "img.image" ? .technical : .embedded, entries: entries,
                                    templates: editable ? (templates[group.id] ?? []) : [],
                                    customFieldHint: editable && group.id == "img.xmp" ? "prefix:Name, e.g. xmp:Label" : nil)
         }
+        return TagSections(sections: sections, generation: generation, generationTexts: generationTexts)
+    }
+
+    /// Longer values (whole workflows) are shown, copied and removed, but not edited in place.
+    static let editableLimit = 4000
+
+    /// Node graphs and other JSON are easy to break as free text, so they're read-only (still removable).
+    static func isEditableText(_ text: String) -> Bool {
+        guard text.count <= editableLimit else { return false }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = trimmed.drop { $0 != "{" && $0 != "[" }
+        return body.isEmpty || (try? JSONSerialization.jsonObject(with: Data(body.utf8))) == nil
+    }
+
+    /// Large JSON is shown indented so it can be read; everything else as stored.
+    static func displayText(_ text: String) -> String {
+        guard text.count > 200, let start = text.firstIndex(where: { $0 == "{" || $0 == "[" }) else { return text }
+        let prefix = text[..<start]
+        guard prefix.count <= 10, let object = try? JSONSerialization.jsonObject(with: Data(text[start...].utf8)),
+              let pretty = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]) else {
+            return text
+        }
+        return String(prefix) + String(decoding: pretty, as: UTF8.self)
+    }
+
+    /// PNG text chunks as entries, split into generator data and ordinary text.
+    static func pngTextEntries(_ chunks: [PNGText.Chunk], editable: Bool) -> ([MetadataEntry], [MetadataEntry]) {
+        var generation: [MetadataEntry] = []
+        var other: [MetadataEntry] = []
+        for (chunk, key) in zip(chunks, PNGText.keys(chunks)) {
+            let size = chunk.text.utf8.count
+            let generationLabel = GenerationInfo.label(forKeyword: chunk.keyword)
+            let detail = "\(chunk.keyword) · \(chunk.type)" + (size > 1024 ? " · \(Format.bytes(size))" : "")
+            let entry = MetadataEntry(key: key, label: generationLabel ?? chunk.keyword, value: displayText(chunk.text), detail: detail,
+                                      editable: editable && isEditableText(chunk.text), removable: editable,
+                                      highlight: generationLabel == nil ? nil : .generation, classify: generationLabel == nil)
+            if generationLabel != nil { generation.append(entry) } else { other.append(entry) }
+        }
+        return (generation, other)
     }
 
     /// Renders a tag value; `simple` is false for structures, which are shown read-only.
@@ -223,6 +311,7 @@ struct ImageHandler: FormatHandler {
     static func extraSections(_ properties: [String: Any]) -> [MetadataSection] {
         let inTree: Set<String> = ["{Exif}", "{TIFF}", "{GPS}", "{IPTC}", "{ExifAux}"]
         let technical: Set<String> = ["{JFIF}", "{GIF}", "{HEIF}", "{HEICS}", "{Raw}", "{AVIS}", "{WebP}", "{TGA}", "{OpenEXR}", "{PNG}"]
+        // PNG text is read from the chunks themselves (see pngTextEntries).
         let pngText: Set<String> = ["Author", "Comment", "Copyright", "CreationTime", "Description", "Disclaimer", "Software", "Source",
                                     "Title", "Warning", "ModificationTime"]
         var sections: [MetadataSection] = []
@@ -230,14 +319,9 @@ struct ImageHandler: FormatHandler {
             guard let dictionary = properties[name] as? [String: Any], !dictionary.isEmpty else { continue }
             let clean = name.trimmingCharacters(in: CharacterSet(charactersIn: "{}"))
             if name == "{PNG}" {
-                let text = dictionary.filter { pngText.contains($0.key) }
-                if !text.isEmpty {
-                    sections.append(MetadataSection(id: "img.pngtext", title: "PNG Text", symbol: "text.alignleft",
-                                                    entries: entries(text, prefix: "png"), note: "Read-only here; Clean removes it."))
-                }
                 let rest = dictionary.filter { !pngText.contains($0.key) }
                 if !rest.isEmpty {
-                    sections.append(MetadataSection(id: "img.png", title: "PNG", symbol: "photo", kind: .technical, entries: entries(rest, prefix: "png")))
+                    sections.append(MetadataSection(id: "img.png", title: "PNG", symbol: "photo", kind: .technical, entries: entries(rest, prefix: "pngprop")))
                 }
                 continue
             }
@@ -344,9 +428,42 @@ struct ImageHandler: FormatHandler {
         guard let imageSource = CGImageSourceCreateWithURL(source as CFURL, nil), let type = CGImageSourceGetType(imageSource) else {
             throw MetadataError.unreadable("ImageIO can't open this image.")
         }
-        let unsupported = edits.filter { !$0.sectionID.hasPrefix("img.") || $0.sectionID == "img.pngtext" || $0.sectionID.hasPrefix("img.maker") }
-        guard unsupported.isEmpty else { throw MetadataError.unsupported("Some of these fields are read-only.") }
-        let tree = try Self.editedTree(imageSource, edits)
+        var textEdits = edits.filter { $0.key.hasPrefix("png:") }
+        let tagEdits = edits.filter { !$0.key.hasPrefix("png:") }
+        let readOnly: Set<String> = ["img.generation.summary", "img.png"]
+        let unsupported = tagEdits.filter { !$0.sectionID.hasPrefix("img.") || $0.sectionID.hasPrefix("img.maker") || readOnly.contains($0.sectionID) }
+        guard unsupported.isEmpty, format == .png || textEdits.isEmpty else { throw MetadataError.unsupported("Some of these fields are read-only.") }
+
+        let original = format == .png ? try mappedData(source) : Data()
+        let chunks = PNGText.read(original).filter { !$0.isXMP }
+        for edit in tagEdits {
+            guard let keyword = Self.pngMirrorKeywords[edit.key], chunks.contains(where: { $0.keyword == keyword }),
+                  !textEdits.contains(where: { $0.key == "png:\(keyword)" }) else { continue }
+            textEdits.append(MetadataEdit(sectionID: "img.pngtext", key: "png:\(keyword)", action: edit.action))
+        }
+        var notes: [String] = []
+        if !tagEdits.isEmpty {
+            let tree = try Self.editedTree(imageSource, tagEdits)
+            // Don't let ImageIO write a second copy of values the PNG text chunks already hold.
+            let texts = Set(chunks.map(\.text))
+            for path in Self.pngMirrors where !tagEdits.contains(where: { $0.key == path }) {
+                if let value = CGImageMetadataCopyStringValueWithPath(tree, nil, path as CFString) as String?, texts.contains(value) {
+                    CGImageMetadataRemoveTagWithPath(tree, nil, path as CFString)
+                }
+            }
+            notes += try write(tree, from: imageSource, type: type, to: destination, checking: tagEdits)
+        }
+        if format == .png {
+            // ImageIO drops text chunks it doesn't know; put every one back (with the text edits applied).
+            let edited = try PNGText.applying(textEdits, to: chunks)
+            let base = tagEdits.isEmpty ? original : try Data(contentsOf: destination)
+            try PNGText.replacingText(in: base, with: edited).write(to: destination)
+        }
+        return notes
+    }
+
+    private func write(_ tree: CGMutableImageMetadata, from imageSource: CGImageSource, type: CFString, to destination: URL,
+                       checking edits: [MetadataEdit]) throws -> [String] {
         var notes: [String] = []
         if copiesLosslessly {
             guard let destinationRef = CGImageDestinationCreateWithURL(destination as CFURL, type, 1, nil) else {

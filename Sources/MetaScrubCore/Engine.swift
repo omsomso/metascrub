@@ -65,7 +65,7 @@ public enum MetadataEngine {
             report = MetadataReport(url: url, format: kind.capitalizedFirst,
                                     notes: ["MetaScrub doesn't read metadata stored inside this kind of file. It shows the file-system details, and Clean removes the extended attributes."])
         }
-        report.sections.removeAll { ($0.kind == .embedded || $0.kind == .technical) && $0.entries.isEmpty && !$0.canAddFields }
+        report.sections.removeAll { [.embedded, .technical, .derived].contains($0.kind) && $0.entries.isEmpty && !$0.canAddFields }
         report.sections.append(FileSystemMetadata.fileSection(url))
         let attributes = FileSystemMetadata.attributesSection(url)
         if !attributes.entries.isEmpty { report.sections.append(attributes) }
