@@ -36,6 +36,12 @@ Cleaning options (Cleaner → Options): remove extended attributes (on), keep th
 (on), keep the orientation (on), keep the original file dates (off; otherwise the cleaned file is
 dated now).
 
+![The Cleaner with three files and what each one gives away](docs/screenshots/cleaner.png)
+
+<img src="docs/screenshots/viewer-photo.png" alt="Viewer: a photo's location, camera and lens" width="49%"> <img src="docs/screenshots/viewer-ai.png" alt="Viewer: the prompt and settings saved by an AI image generator" width="49%">
+
+*Screenshots made with MetaScrub's snapshot mode on generated files with made-up metadata.*
+
 MetaScrub is open source under the GNU General Public License, version 3 or later (`LICENSE`). Copyright (C) 2026 omso.
 
 ## What it handles
