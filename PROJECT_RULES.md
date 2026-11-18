@@ -5,7 +5,7 @@
 - omso Builder builds this repository from `omso-build.json` (build, tests, `--self-test`, copy
   into `/Applications/omso`). Keep that file working when build or test commands change, and
   check it with an omso Builder preview or a build that is not installed.
-- The remote is the private GitHub repository `omsomso/metascrub`. Commit validated work
+- The remote is the GitHub repository `omsomso/metascrub`. Commit validated work
   locally; push only when the user asks, and never publish releases without being asked.
 - Cleaning must not re-encode content silently. If a path has to re-compress or drop something
   beyond metadata, return a note so the app shows it, and document it in the README table.
