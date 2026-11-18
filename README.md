@@ -36,6 +36,8 @@ Cleaning options (Cleaner → Options): remove extended attributes (on), keep th
 (on), keep the orientation (on), keep the original file dates (off; otherwise the cleaned file is
 dated now).
 
+MetaScrub is open source under the GNU General Public License, version 3 or later (`LICENSE`). Copyright (C) 2026 omso.
+
 ## What it handles
 
 | Format | Read | Edit | Clean | How cleaning works |
